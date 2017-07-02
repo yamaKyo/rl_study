@@ -1,5 +1,6 @@
 # coding: utf-8
 import numpy as np
+import Learn
 
 class Player(object):
     """
@@ -92,7 +93,7 @@ class RandomPlayer(Player):
     def action(self):
         # 置ける場所のIndexを取得
         tmp = self.get_board().get_valid_cells_index()
-        index = int(np.random.choice(tmp[0]))
+        index = np.random.choice(tmp)
         x, y = self.get_board().index_to_point(index)
         return x, y, self.get_color()
 
@@ -100,8 +101,7 @@ class RandomPlayer(Player):
 class AIPlayer(Player):
     """
     AIを使って置く位置を決めるプレイヤー
-    置けないとこを出力された時のことを考えて，
-　　内部には，ランダムプレイヤーも持っておく
+    置けない場所を指示されたときは，ランダム
     """
     def __init__(self, ai):
         super(AIPlayer, self).__init__()
@@ -117,7 +117,7 @@ class AIPlayer(Player):
         return self._miss_count
 
     def action(self):
-        index = self._ai.forward(self.get_board().getState())
+        index = self._ai.forward(self.get_board().get_state())
         x, y = self.get_board().index_to_point(index)
         if self._board.can_put_stone(x, y):
             return x, y,self.get_color()
@@ -126,6 +126,7 @@ class AIPlayer(Player):
             tmp = self.get_board().get_valid_cells_index()
             index = np.random.choice(tmp)
             x, y = self.get_board().index_to_point(index)
+            self._miss_count = self._miss_count + 1
             return x, y, self.get_color()
 
     def reset(self):
@@ -141,14 +142,22 @@ class Board(object):
         """
         self._scale = scale
         # 学習高速化のため，1次元配列として，碁盤の方法を保持
-        self._cells = np.zeros(self._scale ** 2)
+        self._cells = np.zeros(self._scale ** 2, dtype=np.int64)
         self._history = []
 
     def get_state(self):
         return self._cells
 
+    def output_status(self):
+        print (self._cells)
+        print (self._history)
+
     def get_valid_cells_index(self):
-        return np.where(self._cells == 0)
+        """
+        石を置くことができるセルのインデックスを返す
+        :return:インデックス
+        """
+        return np.where(self._cells == 0)[0]
 
     def set_val(self, x,y, val):
         """
@@ -157,7 +166,7 @@ class Board(object):
         :param y: y座標
         :param val: 設定する状態
         """
-        self._cells[self.point_to_index(x, y)] = val
+        self._cells[self.point_to_index(x, y)] = int(val)
 
     def get_val(self, x, y):
         """
@@ -166,7 +175,7 @@ class Board(object):
         :param y:y座標
         :return:指定座標の状態
         """
-        return self._cells[self.point_to_index(x, y)]
+        return int(self._cells[self.point_to_index(x, y)])
 
     def index_to_point(self, index):
         """
@@ -174,8 +183,9 @@ class Board(object):
         :param index:
         :return:
         """
-        y = index // self._scale
-        x = index % self._scale
+        y = int(index) // self._scale
+        x = int(index) % self._scale
+
         return int(x),int(y)
 
     def point_to_index(self, x,y):
@@ -201,7 +211,7 @@ class Board(object):
         """
         碁盤の状態を初期化する関数
         """
-        self._cells = np.zeros(self._scale ** 2)
+        self._cells = np.zeros(self._scale ** 2,dtype=np.int64)
         self._history = []
 
     def get_turn_count(self):
@@ -251,7 +261,7 @@ class Board(object):
         last_x, last_y, last_color = self._history[-1]
         # 引き分け判定
         # 全部チェックは馬鹿らしいのでおいた数でチェック
-        if self.get_turn_count() >= self._scale**2 :
+        if len(self._history) >= self._scale**2:
             return 3
 
         # 横方向の探索
@@ -359,7 +369,7 @@ class Game(object):
     """
     五目並べのゲームクラス
     """
-    def __init__(self, first, second, board):
+    def __init__(self, first, second, board=None):
         """
         ゲームクラスのコンストラクタ
         :param first:先手
@@ -368,11 +378,16 @@ class Game(object):
         """
         self._first = first
         self._first.set_color(1)
-        self._first.set_board(board)
-        self._board = board
         self._second = second
         self._second.set_color(2)
-        self._second.set_board(board)
+        if board:
+            self._first.set_board(board)
+            self._board = board
+            self._second.set_board(board)
+        else:
+            assert self._first.get_board() == self._second.get_board()
+            assert not self._first.get_board() is None
+            self._board = self._first.get_board()
 
     def play(self, display):
         """
@@ -432,7 +447,8 @@ if __name__ == "__main__":
     scale = 9
     board = Board(scale)
     player1 = HumanPlayer()
-    player2 = RandomPlayer()
+    env = Learn.GomokuEnv(board)
+    player2 = AIPlayer(Learn.create_dqn(env,"./20170702004634"))
     game = Game(player1, player2, board)
     result = game.play(True)
     # 結果の出力
