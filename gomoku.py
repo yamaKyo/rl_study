@@ -1,6 +1,7 @@
 # coding: utf-8
 import numpy as np
-import Learn
+import AI
+
 
 class Player(object):
     """
@@ -50,6 +51,27 @@ class Player(object):
         :return: 碁盤
         """
         return self._board
+
+
+class FoolAI(Player):
+    def __init__(self):
+        super(FoolAI, self).__init__()
+        self._index = 0
+
+    def action(self):
+        x, y = self.get_board().index_to_point(self._index)
+
+        while not self.get_board().can_put_stone(x, y):
+            self._index = self._index + 1
+            x, y = self.get_board().index_to_point(self._index)
+            if self._index >= self.get_board()._scale**2:
+                return x, y, self.get_color()
+
+        self._index= self._index+1
+        return x, y, self.get_color()
+
+    def reset(self):
+        self._index = 0
 
 
 class HumanPlayer(Player):
@@ -144,6 +166,7 @@ class Board(object):
         # 学習高速化のため，1次元配列として，碁盤の方法を保持
         self._cells = np.zeros(self._scale ** 2, dtype=np.int64)
         self._history = []
+        self._BLACK = 2
 
     def get_state(self):
         return self._cells
@@ -447,14 +470,14 @@ if __name__ == "__main__":
     scale = 9
     board = Board(scale)
     player1 = HumanPlayer()
-    env = Learn.GomokuEnv(board)
-    player2 = AIPlayer(Learn.create_dqn(env,"./20170702004634"))
+    env = AI.GomokuEnv(board)
+    player2 = AIPlayer(AI.create_dqn(env, "./20170707021613"))
     game = Game(player1, player2, board)
     result = game.play(True)
     # 結果の出力
     if result == 1:
         print("先手の勝利")
     if result == 2:
-        print("後手の処理")
+        print("後手の勝利")
     if result == 3:
         print("引き分け")

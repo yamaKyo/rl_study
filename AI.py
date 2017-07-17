@@ -4,13 +4,15 @@ import gym.spaces
 import numpy as np
 import gomoku
 from keras.models import Sequential
+import keras.backend.tensorflow_backend as KTF
+import tensorflow as tf
 from keras.layers import Dense, Activation, Flatten
 from keras.optimizers import Adam
 from rl.agents.dqn import DQNAgent
 from rl.policy import EpsGreedyQPolicy
 from rl.memory import SequentialMemory
 from datetime import datetime
-from copy import deepcopy
+import keras
 
 SCALE = 9
 
@@ -35,11 +37,12 @@ def create_dqn(env, param_file=None):
     memory = SequentialMemory(limit=50000, window_length=1)
     # 行動方策はオーソドックスなepsilon-greedy。ほかに、各行動のQ値によって確率を決定するBoltzmannQPolicyが利用可能
     policy = GomokuEpsPolicy(env._board, eps=0.1)
-    dqn = DQNAgent(model=model, nb_actions=nb_actions, memory=memory, nb_steps_warmup=100,
+    dqn = DQNAgent(model=model, nb_actions=nb_actions, memory=memory,
                    target_model_update=1e-2, policy=policy)
     dqn.compile(Adam(lr=1e-3), metrics=['mae'])
+
     if param_file:
-        dqn.load_weights(param_file)
+        model.load_weights(param_file)
 
     return dqn
 
@@ -71,13 +74,9 @@ class GomokuEpsPolicy(EpsGreedyQPolicy):
                 action = np.random.choice(tmp)
         else:
             assert self._board.get_state().shape[0] == q_values.shape[0]
-            tmp = deepcopy(q_values)
-            # 置けないところは，報酬を最小化
-            if tmp[self._board.get_state() == 0].shape[0] == 0:
-                action = -1
-            else:
-                tmp[self._board.get_state() != 0] = float("-inf")
-                action = np.argmax(tmp)
+            tmp = np.zeros(q_values.shape[0]) + float("-inf")
+            tmp[self._board.get_state()== 0] = q_values[self._board.get_state()== 0]
+            action = np.argmax(tmp)
 
         return action
 
@@ -123,18 +122,18 @@ class GomokuEnv(gym.core.Env):
         self._board.put(x, y, self._color)
         ret = self._board.judge_game()
         if ret == self._color:
-            return self._board.get_state(), 1, True, {}
+            return self._board.get_state(), 1.0, True, {}
         elif ret == 3:
-            return self._board.get_state(), 0, True, {}
+            return self._board.get_state(), 0.0, True, {}
         else:
             x, y,color = self._other.action()
             self._board.put(x, y, color)
             ret = self._board.judge_game()
             if ret == self._other.get_color():
-                return self._board.get_state(), -1, True, {}
+                return self._board.get_state(), -1.0, True, {}
             elif ret == 3:
-                return self._board.get_state(), 0, True, {}
-        return self._board.get_state(),0, False, {}
+                return self._board.get_state(), 0.0, True, {}
+        return self._board.get_state(),0.0, False, {}
 
     def _reset(self):
         """
@@ -158,22 +157,27 @@ def learning(lcount, scount, in_file=None, out_file=None):
 
     if in_file is None:
         # 対戦相手が指定されない場合，ランダム
+        # other = gomoku.FoolAI()
         other = gomoku.RandomPlayer()
     else:
         other = gomoku.AIPlayer(create_dqn(env, in_file))
-
+    old_session = KTF.get_session()
+    session = tf.Session('')
+    KTF.set_session(session)
+    KTF.set_learning_phase(1)
     other.set_board(board)
     env.set_other(other)
-    dqn = create_dqn(env, in_file)
-
+    dqn = create_dqn(env, None)
+    tb_cb = keras.callbacks.TensorBoard(log_dir="./log", histogram_freq=1)
     # AIの学習
-    history = dqn.fit(env, nb_steps=lcount, visualize=False, verbose=2)
+    history = dqn.fit(env, nb_steps=lcount, visualize=False)
     print(history)
     if out_file:
-        dqn.save_weights(out_file, True)
-
+        dqn.model.save_weights(out_file,True)
+    KTF.set_session(old_session)
     # 学習結果に基づいて勝負
     return dqn, simulate(scount, dqn, other, True)
+
 
 def simulate(count, dqn, other, change):
     """
@@ -201,6 +205,7 @@ def simulate(count, dqn, other, change):
             print ("draw")
         else:
             print("AI is lose")
+        other._board.show_board()
         game.reset()
         if change:
             game.change()
@@ -208,8 +213,8 @@ def simulate(count, dqn, other, change):
     return first_win, second_win, miss_count_list
 
 if __name__ == "__main__":
-    l_count = 1000000
-    s_count = 100000
+    l_count = 10000000
+    s_count = 1000
 
     dqn, result = learning(l_count, s_count,out_file=datetime.now().strftime("%Y%m%d%H%M%S"))
     first_win, second_win, miss = result
