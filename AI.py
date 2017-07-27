@@ -4,15 +4,12 @@ import gym.spaces
 import numpy as np
 import gomoku
 from keras.models import Sequential
-import keras.backend.tensorflow_backend as KTF
-import tensorflow as tf
 from keras.layers import Dense, Activation, Flatten
 from keras.optimizers import Adam
 from rl.agents.dqn import DQNAgent
 from rl.policy import EpsGreedyQPolicy
 from rl.memory import SequentialMemory
 from datetime import datetime
-import keras
 
 SCALE = 9
 
@@ -161,20 +158,15 @@ def learning(lcount, scount, in_file=None, out_file=None):
         other = gomoku.RandomPlayer()
     else:
         other = gomoku.AIPlayer(create_dqn(env, in_file))
-    old_session = KTF.get_session()
-    session = tf.Session('')
-    KTF.set_session(session)
-    KTF.set_learning_phase(1)
+
     other.set_board(board)
     env.set_other(other)
     dqn = create_dqn(env, None)
-    tb_cb = keras.callbacks.TensorBoard(log_dir="./log", histogram_freq=1)
     # AIの学習
-    history = dqn.fit(env, nb_steps=lcount, visualize=False)
+    history = dqn.fit(env, nb_steps=lcount, verbose=2)
     print(history)
     if out_file:
         dqn.model.save_weights(out_file,True)
-    KTF.set_session(old_session)
     # 学習結果に基づいて勝負
     return dqn, simulate(scount, dqn, other, True)
 
